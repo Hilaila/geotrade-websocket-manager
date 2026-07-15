@@ -1,0 +1,9 @@
+{
+  "name": "geotrade-websocket-manager",
+  "version": "1.0.0",
+  "description": "Geo-Trade AI — WebSocket Manager (service permanent, Railway)",
+  "type": "module",
+  "main": "index.js",
+  "scripts": { "start": "node index.js" },
+  "dependencies": { "ws": "^8.18.0" }
+}
