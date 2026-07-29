@@ -11,10 +11,20 @@
 
 import WebSocket from 'ws';
 import http from 'http';
+import DataValidationEngine from './data-validator.js';
 
 const REST_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const SYMBOLES = ['BTC', 'ETH', 'SOL'];
+
+// Une instance de validation par (exchange, symbole) — jamais partagée entre
+// deux actifs différents, sans quoi le prix d'ETH serait comparé à celui de BTC.
+const validateurs = new Map();
+function getValidateur(cle) {
+  if (!validateurs.has(cle)) validateurs.set(cle, new DataValidationEngine());
+  return validateurs.get(cle);
+}
+let statsValidation = {}; // { 'binance:BTC': { acceptes, rejetes } }
 
 async function kv(cmd) {
   const r = await fetch(REST_URL, {
@@ -36,6 +46,17 @@ function noterEvenement(exchange, succes) {
 
 async function enregistrerTick(exchange, symbole, prix) {
   const cle = `${exchange}:${symbole}`;
+  const resultat = getValidateur(cle).validate({ price: prix, timestamp: Date.now() });
+
+  if (!statsValidation[cle]) statsValidation[cle] = { acceptes: 0, rejetes: 0 };
+
+  if (!resultat.valid) {
+    statsValidation[cle].rejetes++;
+    console.warn(`[Data Validation] ✗ ${cle} rejeté :`, resultat.errors.join(', '));
+    return; // donnée invalide — jamais écrite dans le Market Memory Engine
+  }
+
+  statsValidation[cle].acceptes++;
   dernierEtat[cle] = { prix, recuLe: new Date().toISOString() };
   // Valeur "live" toujours à jour, consultée par le frontend en temps réel.
   await kv(['SET', `geotrade:live:${symbole}:${exchange}`, JSON.stringify(dernierEtat[cle])]);
